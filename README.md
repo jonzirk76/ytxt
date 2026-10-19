@@ -218,6 +218,49 @@ The installer creates missing templates and preserves your edits on updates.
 Standard Python installations that bypass the shell installer can also use
 the packaged templates, or run `ytxt --init` to create editable copies.
 
+## Prepare a ChatGPT desktop-app draft
+
+```sh
+ytxt 'VIDEO_URL' --chatgpt
+ytxt 'VIDEO_URL' --chatgpt --prompt-file ~/my-question.txt
+ytxt 'VIDEO_URL_1' 'VIDEO_URL_2' --combine comparison.txt --chatgpt --prompt compare
+
+# Reuse an existing file without downloading anything.
+ytxt --chatgpt --chatgpt-file "$HOME/Downloads/ytxt/My transcript.txt"
+```
+
+`--chatgpt` requests a new local chat in the ChatGPT desktop app, prefills an
+editable discussion prompt, and opens the transcript directory as its workspace.
+The prompt lists the selected local transcript files for the app to read when
+you send it. With `--combine`, only the combined document is referenced; otherwise
+all successful transcripts and split parts are listed. Repeat `--chatgpt-file`
+to include several existing `.txt` files. The default prompt uses your editable
+`discussion` template; `--prompt` or `--prompt-file` chooses another.
+
+The draft uses OpenAI's documented `codex://new` desktop link with `prompt` and
+`path` parameters. It never submits the message. File references are provided
+as local workspace context: **automatic attachment chips are not implemented**.
+You can add attachments manually before sending. This opens a local desktop
+chat; ytxt does not guarantee synchronization into ordinary ChatGPT web history.
+See the [official desktop-link documentation](https://learn.chatgpt.com/docs/reference/commands).
+
+The app must be installed on the same computer and registered for `codex://`
+links. On Linux, `xdg-open` and `xdg-mime` from `xdg-utils` are required.
+Check the [Linux app requirements](https://learn.chatgpt.com/docs/linux/linux-app)
+before installing: Ubuntu 22.04 is outside the currently listed supported
+Ubuntu versions. The ytxt installer does not install the ChatGPT app or change
+your operating system. This desktop handoff is unavailable inside Termux.
+
+Every request also saves `prompt.txt` and `draft.json` in a unique folder under
+`~/.local/share/ytxt/drafts/` (or your `YTXT_HOME`). The manifest lists the files
+and desktop link. If the app cannot be launched, ytxt returns a nonzero status,
+prints the saved prompt location, and keeps your transcripts. It does not
+silently open a browser or submit the prompt through an API.
+
+Tests verify draft preparation and launcher behavior with mocks. Opening and
+prefilling the actual Linux app, and any future attachment automation, still
+need verification on a computer with the app installed.
+
 ## Update and develop across devices
 
 On each device, from its clone:
@@ -281,8 +324,9 @@ You can also install into an existing virtual environment with
 `python -m pip install .` or `python -m pip install -e .`, then run `ytxt --init`.
 On Termux, `ytxt --install-share-hook` installs or repairs the Share hook.
 
-ytxt downloads existing captions; it does not transcribe audio or send data
-to ChatGPT. Caption availability and YouTube rate limits still apply. See the
+ytxt downloads existing captions; it does not transcribe audio, submit chat
+messages, or call model APIs. `--chatgpt` passes draft text and local file paths
+to the installed desktop app. Caption availability and YouTube rate limits still apply. See the
 [upstream transcript API documentation](https://github.com/jdepoix/youtube-transcript-api)
 and [Termux documentation](https://github.com/termux/termux-tools/blob/master/doc/termux.1.md.in)
 for the underlying services and platform behavior.

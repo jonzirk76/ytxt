@@ -331,6 +331,56 @@ class CommandTests(unittest.TestCase):
         self.assertIn(__version__, self.stdout.getvalue())
         self.api.assert_not_called()
 
+    def test_chatgpt_handoff_uses_saved_transcripts_and_editable_prompt(self):
+        self.assertEqual(main([VIDEO_ID]), 0)
+        self.api.reset_mock()
+        with patch("ytxt.cli.launch_draft") as launch:
+            self.assertEqual(main([VIDEO_ID, "--chatgpt"]), 0)
+        self.api.assert_not_called()
+        draft = launch.call_args.args[0]
+        self.assertEqual(draft.files, tuple(self.text_files()))
+        self.assertIn("Discuss the transcript", draft.prompt)
+        self.assertTrue(list((self.home / "app/drafts").glob("*/prompt.txt")))
+
+    def test_chatgpt_opens_existing_files_without_downloading(self):
+        transcript = self.home / "existing.txt"
+        transcript.write_text("My saved transcript")
+        prompt = self.home / "question.txt"
+        prompt.write_text("I want to discuss the assumptions.")
+        with patch("ytxt.cli.launch_draft") as launch:
+            self.assertEqual(main(["--chatgpt", "--chatgpt-file", str(transcript),
+                                   "--prompt-file", str(prompt)]), 0)
+        self.api.assert_not_called()
+        self.assertEqual(launch.call_args.args[0].files, (transcript,))
+        self.assertIn("I want to discuss the assumptions.", launch.call_args.args[0].prompt)
+
+    def test_chatgpt_combined_document_avoids_duplicate_context(self):
+        with patch("ytxt.cli.launch_draft") as launch:
+            self.assertEqual(main([VIDEO_ID, OTHER_ID, "--combine", "both.txt", "--chatgpt"]), 0)
+        self.assertEqual(launch.call_args.args[0].files, (self.output / "both.txt",))
+
+    def test_missing_app_keeps_downloads_and_saved_draft(self):
+        with patch("ytxt.cli.launch_draft", side_effect=OSError("No desktop app")):
+            self.assertEqual(main([VIDEO_ID, "--chatgpt"]), 1)
+        self.assertTrue(self.text_files())
+        self.assertTrue(list((self.home / "app/drafts").glob("*/prompt.txt")))
+        self.assertIn("No desktop app", self.stderr.getvalue())
+        self.assertNotIn("Desktop draft requested", self.stdout.getvalue())
+
+    def test_chatgpt_does_not_open_on_all_failed_downloads(self):
+        self.api.return_value.fetch.side_effect = TranscriptsDisabled(VIDEO_ID)
+        with patch("ytxt.cli.launch_draft") as launch:
+            self.assertEqual(main([VIDEO_ID, "--chatgpt"]), 1)
+        launch.assert_not_called()
+
+    def test_chatgpt_cannot_be_combined_with_setup_or_history(self):
+        for args in (["--init", "--chatgpt"], ["--history", "--chatgpt"],
+                     ["--chatgpt-file", "something.txt"]):
+            with self.subTest(args=args), self.assertRaises(SystemExit) as error:
+                main(args)
+            self.assertEqual(error.exception.code, 2)
+        self.api.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

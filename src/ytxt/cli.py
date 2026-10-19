@@ -10,6 +10,7 @@ from requests.exceptions import RequestException
 from youtube_transcript_api import YouTubeTranscriptApi, YouTubeTranscriptApiException
 
 from . import __version__
+from .chatgpt import launch_draft, prepare_draft, save_draft
 from .storage import atomic_write, default_output_dir, initialize, install_share_hook, template_text
 from .transcripts import download, history
 
@@ -73,6 +74,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch", type=Path, metavar="FILE", help="read one URL or ID per line")
     parser.add_argument("--combine", type=Path, metavar="FILE.txt", help="combine successful transcripts")
     parser.add_argument("--refresh", action="store_true", help="redownload and replace saved files")
+    parser.add_argument("--chatgpt", action="store_true",
+                        help="open a desktop-app draft with editable prompt and local file references")
+    parser.add_argument("--chatgpt-file", action="append", type=Path, default=[], metavar="FILE.txt",
+                        help="include an existing transcript in --chatgpt (repeatable)")
     prompt = parser.add_mutually_exclusive_group()
     prompt.add_argument("--prompt", choices=("discussion", "compare"), help="include an editable prompt")
     prompt.add_argument("--prompt-file", type=Path, help="include your own discussion request")
@@ -93,10 +98,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.combine and args.combine.suffix.lower() != ".txt":
         parser.error("--combine must name a .txt file")
     action = args.init or args.history or args.install_share_hook
-    if action and (args.urls or args.batch or args.shared_text):
+    if args.chatgpt_file and not args.chatgpt:
+        parser.error("--chatgpt-file requires --chatgpt")
+    if action and (args.urls or args.batch or args.shared_text or args.chatgpt):
         parser.error("Use setup/history actions separately from video downloads")
-    if not action and not (args.urls or args.batch or args.shared_text):
-        parser.error("Provide a video URL, video ID, or --batch file")
+    if not action and not (args.urls or args.batch or args.shared_text or args.chatgpt_file):
+        parser.error("Provide a video URL, video ID, --batch file, or --chatgpt-file")
     try:
         if args.install_share_hook:
             print(f"Share hook installed: {install_share_hook()}")
@@ -122,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.shared_text:
             shared_urls = re.findall(r"https?://[^\s<>\"']+", args.shared_text)
             urls.extend(url.rstrip(".,);]>") for url in shared_urls)
-        if not urls:
+        if not urls and not args.chatgpt_file:
             raise ValueError("No video URLs found")
         prompt = template_text(args.prompt) if args.prompt else ""
         if args.prompt_file:
@@ -130,6 +137,8 @@ def main(argv: list[str] | None = None) -> int:
         options = {"languages": args.languages, "raw": args.raw, "timestamps": args.timestamps,
                    "start": args.start, "end": args.end, "split_words": args.split_words, "prompt": prompt}
         combined, seen, failures = [], set(), 0
+        if args.chatgpt_file:
+            combined.extend(prepare_draft(args.chatgpt_file, prompt).files)
         fetcher = lambda video_id, languages: YouTubeTranscriptApi().fetch(video_id, languages=languages)
         for url in urls:
             try:
@@ -155,6 +164,14 @@ def main(argv: list[str] | None = None) -> int:
             content = "\n\n".join(path.read_text(encoding="utf-8").rstrip() for path in combined)
             atomic_write(target, content + "\n")
             print(f"Combined: {target}")
+            combined = [target]
+        if args.chatgpt and combined:
+            draft = prepare_draft(combined, prompt or template_text("discussion"))
+            folder = save_draft(draft)
+            print(f"ChatGPT draft saved: {folder / 'prompt.txt'}")
+            launch_draft(draft)
+            print("Desktop draft requested with local file references. Review the prompt before sending.")
+            print("Files are available in the local workspace; add attachment chips manually if needed.")
         return 1 if failures else 0
     except (ValueError, YouTubeTranscriptApiException, RequestException, OSError) as error:
         print(f"ytxt: {error}", file=sys.stderr)
