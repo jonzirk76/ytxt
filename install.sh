@@ -8,7 +8,8 @@ case "${1:-}" in
     -h|--help)
         printf '%s\n' 'Usage: sh install.sh [--dev]' \
             'Install ytxt in a private virtual environment; --dev uses editable source.' \
-            'Overrides: PYTHON, YTXT_HOME, YTXT_BIN_DIR.'
+            'Creates Downloads/ytxt, prompt templates, and the Termux Share hook.' \
+            'Overrides: PYTHON, YTXT_HOME, YTXT_BIN_DIR, YTXT_OUTPUT_DIR.'
         exit 0
         ;;
     '') ;;
@@ -24,8 +25,10 @@ python_command=${PYTHON:-python3}
 venv_dir=${YTXT_HOME:-"$HOME/.local/share/ytxt"}/venv
 if [ -n "${TERMUX_VERSION:-}" ] || [ "${PREFIX:-}" = /data/data/com.termux/files/usr ]; then
     default_bin_dir=${PREFIX:?Termux PREFIX is not set}/bin
+    termux=true
 else
     default_bin_dir=$HOME/.local/bin
+    termux=false
 fi
 bin_dir=${YTXT_BIN_DIR:-"$default_bin_dir"}
 
@@ -49,6 +52,11 @@ if [ "$editable" = true ]; then
     "$venv_dir/bin/python" -m pip install --upgrade --editable "$repo_dir"
 else
     "$venv_dir/bin/python" -m pip install --upgrade "$repo_dir"
+fi
+
+"$venv_dir/bin/ytxt" --init
+if [ "$termux" = true ]; then
+    "$venv_dir/bin/ytxt" --install-share-hook
 fi
 
 mkdir -p "$bin_dir"

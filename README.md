@@ -1,21 +1,17 @@
 # ytxt
 
-Download a YouTube video's subtitles or automatically generated captions as a
-plain text file to give to ChatGPT for discussion. No API key is needed.
-
-This project brings the original desktop script from `~/.local/bin/ytxt` into
-one installable Python package for desktop and Android/Termux. The default
-command stays the same:
+Download YouTube subtitles or automatically generated captions as documents
+for discussion with ChatGPT. Works on desktop and Android through Termux.
+No API key is needed.
 
 ```sh
-ytxt 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+ytxt 'https://youtu.be/dQw4w9WgXcQ'
 ```
 
-On desktop, the transcript is saved as `~/Downloads/<video title>.txt`; Termux
-uses Android's shared Downloads folder. Files have one caption per line and
-no timestamps. English captions are requested by default. Manually
-created captions are preferred over automatically generated captions in the
-same language. Repeating a download with the same title overwrites that file.
+Each text file includes its title, channel, source URL, caption language and
+type, download date, and time range. Captions are joined into readable
+paragraphs without rewriting their wording. A companion JSON file preserves
+the original caption text and timing.
 
 ## Install on a desktop
 
@@ -23,32 +19,31 @@ Requires Git and Python 3.10–3.14. On Debian/Ubuntu:
 
 ```sh
 sudo apt install git python3 python3-venv
-```
-
-Replace `REPOSITORY_URL` below with this project's Git clone URL:
-
-```sh
 git clone REPOSITORY_URL ytxt
 cd ytxt
 sh install.sh
 ```
 
-The installer creates a private environment at `~/.local/share/ytxt/venv` and
-links the command into `~/.local/bin`. If that folder is not already in your
-PATH, add this line to your shell configuration (for example `~/.bashrc`):
+Replace `REPOSITORY_URL` with this project's Git clone URL. The installer:
+
+- Creates `~/Downloads/ytxt` for transcripts and download history.
+- Installs Python dependencies in `~/.local/share/ytxt/venv`.
+- Creates editable discussion templates in `~/.local/share/ytxt/templates`.
+- Links the command into `~/.local/bin`, backing up any previous standalone
+  script beside it.
+
+If `~/.local/bin` is not on PATH, add this to `~/.bashrc` or your shell's
+configuration, then open a new terminal:
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Open a new terminal after changing PATH. An existing standalone `ytxt` command
-is backed up next to the command before replacement. Installation does not
-need `sudo` and does not install packages into the system Python.
+Installation does not need `sudo` or change the system Python packages.
 
 ## Install on Android with Termux
 
-Run these commands inside Termux. Keep the repository and its Python
-environment in Termux's private home directory:
+Keep the clone and Python environment inside Termux's private home directory:
 
 ```sh
 pkg update
@@ -59,128 +54,235 @@ cd ytxt
 sh install.sh
 ```
 
-Allow the Android storage permission requested by `termux-setup-storage`.
-The command is linked into Termux's `$PREFIX/bin`, which is already on PATH.
-Transcripts default to `~/storage/downloads`, Termux's link to Android's shared
-Download folder, so other Android apps can open and share them:
+Allow the Android storage permission when requested. The installer creates
+`~/storage/downloads/ytxt`, which is inside Android's shared Downloads folder.
+On a standard installation, its full path is:
 
-```sh
-ytxt 'https://youtu.be/dQw4w9WgXcQ'
+```text
+/data/data/com.termux/files/home/storage/downloads/ytxt/
 ```
 
-On a standard Termux installation, this is
-`/data/data/com.termux/files/home/storage/downloads/`.
+The command is linked into `$PREFIX/bin`, already on Termux's PATH. The
+installer also creates `~/bin/termux-url-opener`: share a video from YouTube
+or your browser, select **Termux**, and ytxt downloads its captions. An existing
+Share hook is backed up beside the hook before replacement; reinstalling
+preserves those backups. Shared text may include a title alongside the URL.
 
-If shared storage is unavailable, `ytxt` asks you to run `termux-setup-storage`.
-You can also choose another directory with `--output-dir`, or set a persistent
-preference in `~/.bashrc` (or the configuration file for your shell):
+If Android sharing does not launch Termux, check Termux's permission to display
+over other apps. You can always run `ytxt 'VIDEO_URL'` in the terminal.
 
-```sh
-export YTXT_OUTPUT_DIR="$HOME/storage/downloads/transcripts"
+## Your ytxt folder
+
+The desktop default is `~/Downloads/ytxt`; the Termux default is
+`~/storage/downloads/ytxt`. The installer creates it before you download
+anything. It contains:
+
+```text
+ytxt/
+  Video title [video-id].txt       # Document for reading or attaching
+  Video title [video-id].json      # Original captions, timing, and metadata
+  .ytxt/history/                  # Records used to recognize saved downloads
 ```
 
-## Usage
+Video IDs keep different videos with the same title separate. Different
+language, formatting, section, splitting, or prompt options get a filename
+suffix so their outputs can coexist. Long titles are shortened safely.
+
+Choose a different folder for one command:
 
 ```sh
-# Full URLs, shortened URLs, Shorts, live, embed URLs, and video IDs work.
-ytxt 'https://youtu.be/dQw4w9WgXcQ'
-ytxt dQw4w9WgXcQ
-
-# Choose the destination for one invocation.
-ytxt 'https://youtu.be/dQw4w9WgXcQ' -d ~/Documents/transcripts
-
-# Request Spanish captions, falling back to English.
-ytxt 'https://youtu.be/dQw4w9WgXcQ' --languages es en
-
-ytxt --help
-ytxt --version
+ytxt 'VIDEO_URL' --output-dir ~/Documents/transcripts
 ```
 
-Quote URLs so that shell characters such as `&` stay part of the URL.
-`--output-dir` overrides `YTXT_OUTPUT_DIR`, which overrides the device default
-(`~/Downloads` on desktop, `~/storage/downloads` in Termux).
-The output directory is created as needed. If the title cannot be fetched, the
-video ID is used as the filename. Unsafe filename characters are replaced.
+Or set a default in your shell configuration. Export it before running the
+installer if you want the installer to initialize that folder:
 
-This downloads existing captions; it does not transcribe audio or send anything
-to ChatGPT. Videos without accessible captions cannot be downloaded. YouTube
-can also block or rate-limit requests. Errors are printed to stderr with a
-nonzero exit code. See the
-[upstream transcript API documentation](https://github.com/jdepoix/youtube-transcript-api)
-for supported caption behavior and service limitations.
+```sh
+export YTXT_OUTPUT_DIR="$HOME/Documents/ytxt"
+sh install.sh
+```
 
-## Update any device
+An explicit `--output-dir` takes precedence over `YTXT_OUTPUT_DIR`; both name
+the exact destination, with no extra subfolder appended. `ytxt --init` can
+create the folder and missing prompt templates again without downloading.
 
-From that device's clone:
+## Readable text, original lines, and timestamps
+
+```sh
+# Default: source header and readable paragraphs.
+ytxt 'VIDEO_URL'
+
+# Source header and one caption per line.
+ytxt 'VIDEO_URL' --raw
+
+# Timestamp each paragraph; combine with --raw to timestamp every caption.
+ytxt 'VIDEO_URL' --timestamps
+```
+
+Paragraphs are grouped using caption timing and length. Wording, capitalization,
+and punctuation are not corrected. Whitespace is normalized in readable
+paragraphs; the JSON companion retains the original text.
+
+Headers include a link to the start of the included caption range. English
+captions are requested by default; manually created captions are preferred
+over automatically generated captions in the same language:
+
+```sh
+ytxt 'VIDEO_URL' --languages es en
+```
+
+Put URLs before `--languages`, which accepts multiple language codes.
+
+## Extract a section or split a long video
+
+```sh
+# Include captions overlapping minutes 12 through 20.
+ytxt 'VIDEO_URL' --start 12:00 --end 20:00 --timestamps
+
+# Produce numbered parts with at most 2,000 transcript words each.
+ytxt 'VIDEO_URL' --split-words 2000 --timestamps
+```
+
+Times accept seconds, `MM:SS`, or `HH:MM:SS`, including fractional seconds.
+The start is inclusive and the end is exclusive. Captions overlapping the
+requested interval are included whole, so the document may extend slightly
+past those boundaries. The JSON companion keeps the full fetched transcript.
+
+Every split part repeats the source information and identifies its part number
+and caption time range. The word limit applies to transcript text, excluding
+headers and prompts. A caption longer than the limit is split at word
+boundaries; portions keep the original caption's timing.
+
+## Download several videos and compare them
+
+```sh
+ytxt 'VIDEO_URL_1' 'VIDEO_URL_2'
+ytxt 'VIDEO_URL_1' 'VIDEO_URL_2' --combine comparison.txt --prompt compare
+```
+
+A relative combined filename is placed inside your ytxt folder. Individual
+documents and their JSON companions are still saved. Combined documents retain
+each source's header and all split parts in order.
+
+For a list of videos, create a text file with one URL or video ID per line.
+Blank lines and lines starting with `#` are ignored:
+
+```sh
+ytxt --batch links.txt
+ytxt --batch links.txt --combine comparison.txt --prompt compare
+```
+
+Full watch URLs, shortened URLs, Shorts, live and embed URLs, and bare video IDs
+are accepted. Duplicate IDs in one invocation are processed once. Quote URLs
+so shell characters such as `&` stay part of the URL.
+
+If one video fails, other videos continue. A combined document includes the
+successful downloads; the command still returns a nonzero status if any item
+failed.
+
+## History and refreshing downloads
+
+```sh
+ytxt --history
+ytxt 'VIDEO_URL' --refresh
+```
+
+Repeating a successful request with the same options skips network requests
+when its files are present and unchanged. Deleting a file makes that request
+download again. Edited saved files are preserved unless you explicitly use
+`--refresh`, which redownloads and replaces them.
+
+History is local to each output folder. Keep `.ytxt/history` with your
+transcripts if you move the folder. Older files downloaded before this feature
+are left in place and are not automatically imported. Refreshing a video whose
+title changed can leave its older files in place.
+
+## Editable discussion prompts
+
+```sh
+ytxt 'VIDEO_URL' --prompt discussion
+ytxt 'VIDEO_URL_1' 'VIDEO_URL_2' --combine comparison.txt --prompt compare
+ytxt 'VIDEO_URL' --prompt-file ~/my-discussion-request.txt
+```
+
+Prompts are optional and included in the text documents for you to give to
+ChatGPT. They do not trigger any AI requests. Edit these files to change the
+built-in requests:
+
+```text
+~/.local/share/ytxt/templates/discussion.txt
+~/.local/share/ytxt/templates/compare.txt
+```
+
+The installer creates missing templates and preserves your edits on updates.
+Standard Python installations that bypass the shell installer can also use
+the packaged templates, or run `ytxt --init` to create editable copies.
+
+## Update and develop across devices
+
+On each device, from its clone:
 
 ```sh
 git pull --ff-only
 sh install.sh
 ```
 
-The source and Python dependency declaration live in Git. Each device has its
-own installed environment and output-directory preference. Downloaded
-transcripts and virtual environments are not part of the source backup.
-
-## Develop and sync changes
-
-Use an editable installation on a device where you develop:
+For development, install in editable mode:
 
 ```sh
 sh install.sh --dev
 ```
 
-Changes to `src/ytxt/` then take effect immediately. Keep the clone in place.
-After changing dependencies in `pyproject.toml`, rerun `sh install.sh --dev`.
-Tests use Python's built-in test runner and mock YouTube requests:
+Changes to `src/ytxt/` then take effect immediately; keep the clone in place.
+Rerun the editable installer after changing dependencies or package metadata.
+To update an editable installation, use `sh install.sh --dev` after pulling.
+
+Run the tests with the installed environment:
 
 ```sh
 ~/.local/share/ytxt/venv/bin/python -m unittest discover -s tests -v
 ```
 
-Make changes in a branch, run the tests, then commit and push to the shared
-remote. Pull those changes on other devices and rerun the installer. GitHub
-Actions runs the tests on pushes and pull requests.
+Tests mock YouTube requests and exercise rendering, history, batch handling,
+folder creation, and Share-hook installation. GitHub Actions tests the package
+on Python 3.10 and 3.14. Android behavior is simulated in tests; actual phone
+permissions and sharing must also be checked on the device.
 
-```sh
-git switch -c feature/my-change
-# Edit the files and run the tests.
-git add src tests pyproject.toml README.md install.sh .gitignore .github
-git commit -m "Describe the change"
-git push -u origin feature/my-change
-```
-
-The current package version is in `src/ytxt/__init__.py`. The CLI lives in
-`src/ytxt/cli.py`; installation and dependencies are defined by `pyproject.toml`.
+Make changes in a branch, run the tests, commit, and push. Pull those commits
+on other devices and rerun their installer. Git backs up the source and
+packaged default templates. Downloaded transcripts, history, installed
+environments, and personal template edits remain local to each device.
 
 ## Connect the local repository to GitHub
 
-After creating an empty repository on GitHub, connect this local repository
-and push its commits:
+Create an empty repository on GitHub, then connect and push:
 
 ```sh
 git remote add origin REPOSITORY_URL
 git push -u origin main
 ```
 
-Use the real remote URL in place of `REPOSITORY_URL`. Once pushed, new devices
-can use the clone-and-install instructions above.
-
-If starting from a copy of these files without Git history, first run
-`git init -b main`, `git add .`, and
-`git commit -m "Import ytxt with desktop and Termux installation"`.
+If starting from a copy without Git history, first run `git init -b main`,
+`git add .`, and `git commit -m "Import ytxt"`.
 
 ## Installer overrides
 
 `PYTHON` selects the Python executable. `YTXT_HOME` changes the application
-directory (the installer puts `venv/` inside it); `YTXT_BIN_DIR` changes where
-the command link is placed. Use the same overrides when reinstalling or
-updating. For example:
+directory containing `venv/` and `templates/`. `YTXT_BIN_DIR` changes where the
+command link is placed. `YTXT_OUTPUT_DIR` selects the transcript folder.
+Use absolute paths and the same overrides when reinstalling. Persist
+`YTXT_HOME` and `YTXT_OUTPUT_DIR` in your shell configuration when customized.
 
 ```sh
 PYTHON=python3.12 sh install.sh
 ```
 
-Alternatively, install using standard Python tooling in an existing virtual
-environment with `python -m pip install .`, or `python -m pip install -e .`
-for development.
+You can also install into an existing virtual environment with
+`python -m pip install .` or `python -m pip install -e .`, then run `ytxt --init`.
+On Termux, `ytxt --install-share-hook` installs or repairs the Share hook.
+
+ytxt downloads existing captions; it does not transcribe audio or send data
+to ChatGPT. Caption availability and YouTube rate limits still apply. See the
+[upstream transcript API documentation](https://github.com/jdepoix/youtube-transcript-api)
+and [Termux documentation](https://github.com/termux/termux-tools/blob/master/doc/termux.1.md.in)
+for the underlying services and platform behavior.
