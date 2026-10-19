@@ -11,7 +11,8 @@ from youtube_transcript_api import YouTubeTranscriptApi, YouTubeTranscriptApiExc
 
 from . import __version__
 from .chatgpt import launch_draft, prepare_draft, save_draft
-from .storage import atomic_write, default_output_dir, initialize, install_share_hook, template_text
+from .browser import install_browser_helper, open_browser_draft
+from .storage import atomic_write, default_output_dir, initialize, install_share_hook, is_termux, template_text
 from .transcripts import download, history
 
 
@@ -74,10 +75,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch", type=Path, metavar="FILE", help="read one URL or ID per line")
     parser.add_argument("--combine", type=Path, metavar="FILE.txt", help="combine successful transcripts")
     parser.add_argument("--refresh", action="store_true", help="redownload and replace saved files")
-    parser.add_argument("--chatgpt", action="store_true",
-                        help="open a desktop-app draft with editable prompt and local file references")
+    handoff = parser.add_mutually_exclusive_group()
+    handoff.add_argument("--chatgpt", "--chatgpt-browser", dest="chatgpt_target",
+                         action="store_const", const="browser",
+                         help="prepare a ChatGPT browser draft (default on desktop; requires browser helper)")
+    handoff.add_argument("--chatgpt-app", dest="chatgpt_target", action="store_const", const="app",
+                         help="open a desktop-app draft with local file references")
+    handoff.add_argument("--no-chatgpt", dest="chatgpt_target", action="store_const", const="none",
+                         help="download only; skip the default desktop browser handoff")
     parser.add_argument("--chatgpt-file", action="append", type=Path, default=[], metavar="FILE.txt",
-                        help="include an existing transcript in --chatgpt (repeatable)")
+                        help="include an existing transcript in a ChatGPT draft (repeatable)")
     prompt = parser.add_mutually_exclusive_group()
     prompt.add_argument("--prompt", choices=("discussion", "compare"), help="include an editable prompt")
     prompt.add_argument("--prompt-file", type=Path, help="include your own discussion request")
@@ -85,6 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
     actions.add_argument("--init", action="store_true", help="create ytxt's folder and prompt templates")
     actions.add_argument("--history", action="store_true", help="list downloads in the output folder")
     actions.add_argument("--install-share-hook", action="store_true", help="set up Android Share to Termux")
+    actions.add_argument("--install-browser-helper", action="store_true", help="write the browser userscript and show its path")
     parser.add_argument("--shared-text", help=argparse.SUPPRESS)
     parser.add_argument("--version", action="version", version=f"ytxt {__version__}")
     return parser
@@ -97,14 +105,20 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--end must be later than --start")
     if args.combine and args.combine.suffix.lower() != ".txt":
         parser.error("--combine must name a .txt file")
-    action = args.init or args.history or args.install_share_hook
-    if args.chatgpt_file and not args.chatgpt:
-        parser.error("--chatgpt-file requires --chatgpt")
-    if action and (args.urls or args.batch or args.shared_text or args.chatgpt):
+    handoff_target = args.chatgpt_target or ("none" if is_termux() else "browser")
+    action = args.init or args.history or args.install_share_hook or args.install_browser_helper
+    if args.chatgpt_file and handoff_target == "none":
+        parser.error("--chatgpt-file requires a browser or app handoff")
+    if action and (args.urls or args.batch or args.shared_text or args.chatgpt_file
+                   or args.chatgpt_target in ("browser", "app")):
         parser.error("Use setup/history actions separately from video downloads")
     if not action and not (args.urls or args.batch or args.shared_text or args.chatgpt_file):
         parser.error("Provide a video URL, video ID, --batch file, or --chatgpt-file")
     try:
+        if args.install_browser_helper:
+            print(f"Browser helper: {install_browser_helper()}")
+            print("Add this userscript to Tampermonkey in your desktop browser, then sign in at chatgpt.com.")
+            return 0
         if args.install_share_hook:
             print(f"Share hook installed: {install_share_hook()}")
             return 0
@@ -138,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
                    "start": args.start, "end": args.end, "split_words": args.split_words, "prompt": prompt}
         combined, seen, failures = [], set(), 0
         if args.chatgpt_file:
-            combined.extend(prepare_draft(args.chatgpt_file, prompt).files)
+            combined.extend(prepare_draft(args.chatgpt_file, prompt, target=handoff_target).files)
         fetcher = lambda video_id, languages: YouTubeTranscriptApi().fetch(video_id, languages=languages)
         for url in urls:
             try:
@@ -165,13 +179,16 @@ def main(argv: list[str] | None = None) -> int:
             atomic_write(target, content + "\n")
             print(f"Combined: {target}")
             combined = [target]
-        if args.chatgpt and combined:
-            draft = prepare_draft(combined, prompt or template_text("discussion"))
+        if handoff_target != "none" and combined:
+            draft = prepare_draft(combined, prompt or template_text("discussion"), target=handoff_target)
             folder = save_draft(draft)
             print(f"ChatGPT draft saved: {folder / 'prompt.txt'}")
-            launch_draft(draft)
-            print("Desktop draft requested with local file references. Review the prompt before sending.")
-            print("Files are available in the local workspace; add attachment chips manually if needed.")
+            if handoff_target == "browser":
+                open_browser_draft(draft)
+            else:
+                launch_draft(draft)
+                print("Desktop draft requested with local file references. Review the prompt before sending.")
+                print("Files are available in the local workspace; add attachment chips manually if needed.")
         return 1 if failures else 0
     except (ValueError, YouTubeTranscriptApiException, RequestException, OSError) as error:
         print(f"ytxt: {error}", file=sys.stderr)

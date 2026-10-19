@@ -100,6 +100,7 @@ class CommandTests(unittest.TestCase):
         }))
         stack.enter_context(patch("ytxt.storage.Path.home", return_value=self.home))
         self.api = stack.enter_context(patch("ytxt.cli.YouTubeTranscriptApi"))
+        self.browser = stack.enter_context(patch("ytxt.cli.open_browser_draft"))
         self.fetched = FetchedTranscript(
             [FetchedTranscriptSnippet("First caption.", 0, 3),
              FetchedTranscriptSnippet("Second caption — café.", 3, 4),
@@ -335,7 +336,7 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(main([VIDEO_ID]), 0)
         self.api.reset_mock()
         with patch("ytxt.cli.launch_draft") as launch:
-            self.assertEqual(main([VIDEO_ID, "--chatgpt"]), 0)
+            self.assertEqual(main([VIDEO_ID, "--chatgpt-app"]), 0)
         self.api.assert_not_called()
         draft = launch.call_args.args[0]
         self.assertEqual(draft.files, tuple(self.text_files()))
@@ -348,7 +349,7 @@ class CommandTests(unittest.TestCase):
         prompt = self.home / "question.txt"
         prompt.write_text("I want to discuss the assumptions.")
         with patch("ytxt.cli.launch_draft") as launch:
-            self.assertEqual(main(["--chatgpt", "--chatgpt-file", str(transcript),
+            self.assertEqual(main(["--chatgpt-app", "--chatgpt-file", str(transcript),
                                    "--prompt-file", str(prompt)]), 0)
         self.api.assert_not_called()
         self.assertEqual(launch.call_args.args[0].files, (transcript,))
@@ -356,12 +357,12 @@ class CommandTests(unittest.TestCase):
 
     def test_chatgpt_combined_document_avoids_duplicate_context(self):
         with patch("ytxt.cli.launch_draft") as launch:
-            self.assertEqual(main([VIDEO_ID, OTHER_ID, "--combine", "both.txt", "--chatgpt"]), 0)
+            self.assertEqual(main([VIDEO_ID, OTHER_ID, "--combine", "both.txt", "--chatgpt-app"]), 0)
         self.assertEqual(launch.call_args.args[0].files, (self.output / "both.txt",))
 
     def test_missing_app_keeps_downloads_and_saved_draft(self):
         with patch("ytxt.cli.launch_draft", side_effect=OSError("No desktop app")):
-            self.assertEqual(main([VIDEO_ID, "--chatgpt"]), 1)
+            self.assertEqual(main([VIDEO_ID, "--chatgpt-app"]), 1)
         self.assertTrue(self.text_files())
         self.assertTrue(list((self.home / "app/drafts").glob("*/prompt.txt")))
         self.assertIn("No desktop app", self.stderr.getvalue())
@@ -370,16 +371,52 @@ class CommandTests(unittest.TestCase):
     def test_chatgpt_does_not_open_on_all_failed_downloads(self):
         self.api.return_value.fetch.side_effect = TranscriptsDisabled(VIDEO_ID)
         with patch("ytxt.cli.launch_draft") as launch:
-            self.assertEqual(main([VIDEO_ID, "--chatgpt"]), 1)
+            self.assertEqual(main([VIDEO_ID, "--chatgpt-app"]), 1)
         launch.assert_not_called()
 
     def test_chatgpt_cannot_be_combined_with_setup_or_history(self):
         for args in (["--init", "--chatgpt"], ["--history", "--chatgpt"],
-                     ["--chatgpt-file", "something.txt"]):
+                     ["--chatgpt-file", "something.txt", "--no-chatgpt"]):
             with self.subTest(args=args), self.assertRaises(SystemExit) as error:
                 main(args)
             self.assertEqual(error.exception.code, 2)
         self.api.assert_not_called()
+
+    def test_desktop_downloads_open_browser_draft_by_default(self):
+        self.assertEqual(main([VIDEO_ID]), 0)
+        self.browser.assert_called_once()
+        draft = self.browser.call_args.args[0]
+        self.assertEqual(draft.target, "browser")
+        self.assertEqual(draft.files, tuple(self.text_files()))
+        self.assertNotIn(str(self.home), draft.prompt)
+
+    def test_no_chatgpt_skips_browser_and_draft_creation(self):
+        self.assertEqual(main([VIDEO_ID, "--no-chatgpt"]), 0)
+        self.browser.assert_not_called()
+        self.assertFalse((self.home / "app/drafts").exists())
+
+    def test_termux_downloads_do_not_open_chatgpt_by_default(self):
+        shared = self.home / "storage/downloads"
+        shared.mkdir(parents=True)
+        with patch.dict(os.environ, {"TERMUX_VERSION": "test"}):
+            self.assertEqual(main([VIDEO_ID]), 0)
+        self.browser.assert_not_called()
+
+    def test_browser_explicit_alias_and_existing_files(self):
+        transcript = self.home / "saved.txt"
+        transcript.write_text("Saved captions")
+        for option in ("--chatgpt", "--chatgpt-browser"):
+            self.browser.reset_mock()
+            self.assertEqual(main([option, "--chatgpt-file", str(transcript)]), 0)
+            self.assertEqual(self.browser.call_args.args[0].files, (transcript,))
+        self.api.assert_not_called()
+
+    def test_browser_failure_retains_transcripts_and_recoverable_prompt(self):
+        self.browser.side_effect = OSError("Enable the browser helper")
+        self.assertEqual(main([VIDEO_ID]), 1)
+        self.assertTrue(self.text_files())
+        self.assertTrue(list((self.home / "app/drafts").glob("*/prompt.txt")))
+        self.assertIn("Enable the browser helper", self.stderr.getvalue())
 
 
 if __name__ == "__main__":

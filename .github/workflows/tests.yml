@@ -18,5 +18,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install .
       - run: python -m unittest discover -s tests -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node tests/browser_helper.test.cjs
       - run: ytxt --help
       - run: sh -n install.sh

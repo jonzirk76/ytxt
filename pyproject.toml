@@ -20,4 +20,4 @@ where = ["src"]
 version = {attr = "ytxt.__version__"}
 
 [tool.setuptools.package-data]
-ytxt = ["templates/*.txt"]
+ytxt = ["templates/*.txt", "browser/*.js"]

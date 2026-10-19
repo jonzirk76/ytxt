@@ -13,6 +13,10 @@ type, download date, and time range. Captions are joined into readable
 paragraphs without rewriting their wording. A companion JSON file preserves
 the original caption text and timing.
 
+On desktop, ytxt opens a ChatGPT browser draft by default. Enable the browser
+helper once using the steps below. Use `--no-chatgpt` to download only.
+Termux keeps downloading without opening ChatGPT.
+
 ## Install on a desktop
 
 Requires Git and Python 3.10–3.14. On Debian/Ubuntu:
@@ -29,6 +33,7 @@ Replace `REPOSITORY_URL` with this project's Git clone URL. The installer:
 - Creates `~/Downloads/ytxt` for transcripts and download history.
 - Installs Python dependencies in `~/.local/share/ytxt/venv`.
 - Creates editable discussion templates in `~/.local/share/ytxt/templates`.
+- Prepares `~/.local/share/ytxt/browser/ytxt-chatgpt.user.js` for browser drafts.
 - Links the command into `~/.local/bin`, backing up any previous standalone
   script beside it.
 
@@ -218,48 +223,118 @@ The installer creates missing templates and preserves your edits on updates.
 Standard Python installations that bypass the shell installer can also use
 the packaged templates, or run `ytxt --init` to create editable copies.
 
-## Prepare a ChatGPT desktop-app draft
+## Default desktop behavior: a ChatGPT browser draft
 
 ```sh
+# Download and prepare a browser draft with the transcript selected for upload.
+ytxt 'VIDEO_URL'
+
+# Explicit aliases for the default desktop handoff.
 ytxt 'VIDEO_URL' --chatgpt
-ytxt 'VIDEO_URL' --chatgpt --prompt-file ~/my-question.txt
-ytxt 'VIDEO_URL_1' 'VIDEO_URL_2' --combine comparison.txt --chatgpt --prompt compare
+ytxt 'VIDEO_URL' --chatgpt-browser
+
+# Download only.
+ytxt 'VIDEO_URL' --no-chatgpt
+
+# Choose a starter request or combine sources.
+ytxt 'VIDEO_URL' --prompt-file ~/my-question.txt
+ytxt 'VIDEO_URL_1' 'VIDEO_URL_2' --combine comparison.txt --prompt compare
 
 # Reuse an existing file without downloading anything.
-ytxt --chatgpt --chatgpt-file "$HOME/Downloads/ytxt/My transcript.txt"
+ytxt --chatgpt-file "$HOME/Downloads/ytxt/My transcript.txt"
 ```
 
-`--chatgpt` requests a new local chat in the ChatGPT desktop app, prefills an
-editable discussion prompt, and opens the transcript directory as its workspace.
-The prompt lists the selected local transcript files for the app to read when
-you send it. With `--combine`, only the combined document is referenced; otherwise
-all successful transcripts and split parts are listed. Repeat `--chatgpt-file`
-to include several existing `.txt` files. The default prompt uses your editable
-`discussion` template; `--prompt` or `--prompt-file` chooses another.
+After a successful desktop download, ytxt opens a new tab at `chatgpt.com` in
+your default browser. Its browser helper fills an editable discussion prompt
+and selects the transcript files in ChatGPT's upload control. **It never
+presses Send.** Check that the attachments have finished uploading, add your
+question, and send when ready. Termux continues downloading without launching
+ChatGPT; the browser handoff currently requires a desktop browser.
 
-The draft uses OpenAI's documented `codex://new` desktop link with `prompt` and
-`path` parameters. It never submits the message. File references are provided
-as local workspace context: **automatic attachment chips are not implemented**.
-You can add attachments manually before sending. This opens a local desktop
-chat; ytxt does not guarantee synchronization into ordinary ChatGPT web history.
-See the [official desktop-link documentation](https://learn.chatgpt.com/docs/reference/commands).
+With `--combine`, only the combined document is selected; otherwise all
+successful transcripts and split parts are selected. Repeat `--chatgpt-file`
+to include existing `.txt` files. The default request uses your editable
+`discussion` template; `--prompt` or `--prompt-file` chooses another.
+Browser prompts refer to attachments, since the website cannot read local
+filesystem paths. The helper preserves an existing unsent text draft and asks
+you to clear or save it before retrying.
+
+### Enable the browser helper once
+
+1. Install [Tampermonkey](https://www.tampermonkey.net/) in your desktop browser.
+2. Run `ytxt --install-browser-helper` to print the installed userscript's path.
+3. In Tampermonkey, create a new script, replace its contents with the complete
+   contents of that file, save it, and enable it. Allow userscripts and access
+   to `chatgpt.com` if the browser requests those permissions.
+4. Sign in to your ChatGPT account at `https://chatgpt.com/` in that browser.
+5. Run ytxt normally. If prompted by the script manager, allow the helper's
+   connection to `127.0.0.1`.
+
+The ytxt installer prepares this file automatically:
+
+```text
+~/.local/share/ytxt/browser/ytxt-chatgpt.user.js
+```
+
+It does not install browser add-ons or enable scripts for you. After an update
+that changes the helper, replace the script's contents in Tampermonkey with
+the updated installed file. `YTXT_HOME` changes the parent application folder.
+
+### Handoff behavior and limitations
+
+ytxt starts a short-lived server bound to `127.0.0.1` on a random port. A random
+token authorizes that handoff. Prompt text and transcript contents travel
+through this local connection, not through a URL query. The helper runs only
+on `chatgpt.com` and activates only for ytxt's marked new-chat links. The
+bridge serves the selected file contents, not arbitrary filesystem paths.
+
+The command waits up to 30 seconds for the helper and up to another 180 seconds
+for draft preparation, then closes its local server. A missing helper, sign-in
+screen, or incompatible composer produces an error while retaining your files
+and saved prompt. Retry using `--chatgpt-file`, or use `--no-chatgpt` to download
+without the browser handoff. Total attached transcript content is limited to
+16 MiB per handoff; ChatGPT can impose additional account limits.
+
+This is a userscript integration with ChatGPT's web interface. Website changes
+may require updating the helper. Tests cover draft filling and file selection
+against a simulated composer and exercise the real local HTTP bridge. The
+live signed-in ChatGPT interface still needs verification in your browser.
+No ChatGPT desktop app is required.
+
+### Optional native desktop-app target
+
+```sh
+ytxt 'VIDEO_URL' --chatgpt-app
+```
+
+`--chatgpt-app` requests a new local chat in the installed ChatGPT desktop app,
+prefills an editable prompt, and opens the transcript directory as a workspace.
+It lists local file references; automatic attachment chips are not implemented
+for this native target. The app can read the referenced files after you send.
+
+This uses OpenAI's documented `codex://new` link with `prompt` and `path`
+parameters. It never submits the message. You can add attachments manually
+before sending. ytxt does not guarantee synchronization of local desktop chats
+into ordinary ChatGPT web history. See the
+[official desktop-link documentation](https://learn.chatgpt.com/docs/reference/commands).
 
 The app must be installed on the same computer and registered for `codex://`
-links. On Linux, `xdg-open` and `xdg-mime` from `xdg-utils` are required.
-Check the [Linux app requirements](https://learn.chatgpt.com/docs/linux/linux-app)
-before installing: Ubuntu 22.04 is outside the currently listed supported
+links. On Linux, `xdg-open` and `xdg-mime` from `xdg-utils` are required. Check
+the [Linux app requirements](https://learn.chatgpt.com/docs/linux/linux-app)
+before installing; Ubuntu 22.04 is outside the currently listed supported
 Ubuntu versions. The ytxt installer does not install the ChatGPT app or change
-your operating system. This desktop handoff is unavailable inside Termux.
+your operating system.
 
-Every request also saves `prompt.txt` and `draft.json` in a unique folder under
+Both targets save `prompt.txt` and `draft.json` in a unique folder under
 `~/.local/share/ytxt/drafts/` (or your `YTXT_HOME`). The manifest lists the files
-and desktop link. If the app cannot be launched, ytxt returns a nonzero status,
-prints the saved prompt location, and keeps your transcripts. It does not
-silently open a browser or submit the prompt through an API.
+and target. A failed handoff returns a nonzero status, prints the saved prompt
+location, and retains the downloaded transcripts. An explicit native target
+does not fall back to the browser.
 
-Tests verify draft preparation and launcher behavior with mocks. Opening and
-prefilling the actual Linux app, and any future attachment automation, still
-need verification on a computer with the app installed.
+Opening the actual Linux app still needs verification on a computer with it
+installed. In earlier versions, `--chatgpt` selected the native target; use
+`--chatgpt-app` for that behavior now.
+
 
 ## Update and develop across devices
 
@@ -284,6 +359,7 @@ Run the tests with the installed environment:
 
 ```sh
 ~/.local/share/ytxt/venv/bin/python -m unittest discover -s tests -v
+node tests/browser_helper.test.cjs
 ```
 
 Tests mock YouTube requests and exercise rendering, history, batch handling,
@@ -325,8 +401,9 @@ You can also install into an existing virtual environment with
 On Termux, `ytxt --install-share-hook` installs or repairs the Share hook.
 
 ytxt downloads existing captions; it does not transcribe audio, submit chat
-messages, or call model APIs. `--chatgpt` passes draft text and local file paths
-to the installed desktop app. Caption availability and YouTube rate limits still apply. See the
+messages, or call model APIs. The default desktop browser handoff fills a
+draft and selects files for upload; `--chatgpt-app` passes draft text and local
+file paths to the native app. Caption availability and YouTube rate limits still apply. See the
 [upstream transcript API documentation](https://github.com/jdepoix/youtube-transcript-api)
 and [Termux documentation](https://github.com/termux/termux-tools/blob/master/doc/termux.1.md.in)
 for the underlying services and platform behavior.

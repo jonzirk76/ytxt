@@ -73,6 +73,10 @@ def initialize(output_dir: Path) -> None:
         if not target.exists():
             text = files("ytxt").joinpath("templates", f"{name}.txt").read_text(encoding="utf-8")
             atomic_write(target, text)
+    if not is_termux():
+        from .browser import install_browser_helper
+
+        install_browser_helper()
 
 
 def install_share_hook() -> Path:

@@ -97,6 +97,7 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertTrue((output / ".ytxt/history").is_dir())
             self.assertTrue((application / "templates/discussion.txt").is_file())
+            self.assertTrue((application / "browser/ytxt-chatgpt.user.js").is_file())
             self.assertTrue((commands / "ytxt").is_symlink())
             backups = list(commands.glob("ytxt.backup.*"))
             self.assertEqual(len(backups), 1)

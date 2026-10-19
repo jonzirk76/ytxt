@@ -8,7 +8,7 @@ case "${1:-}" in
     -h|--help)
         printf '%s\n' 'Usage: sh install.sh [--dev]' \
             'Install ytxt in a private virtual environment; --dev uses editable source.' \
-            'Creates Downloads/ytxt, prompt templates, and the Termux Share hook.' \
+            'Creates Downloads/ytxt, prompt templates, the desktop browser helper, and the Termux Share hook.' \
             'Overrides: PYTHON, YTXT_HOME, YTXT_BIN_DIR, YTXT_OUTPUT_DIR.'
         exit 0
         ;;
@@ -55,6 +55,9 @@ else
 fi
 
 "$venv_dir/bin/ytxt" --init
+if [ "$termux" = false ]; then
+    "$venv_dir/bin/ytxt" --install-browser-helper
+fi
 if [ "$termux" = true ]; then
     "$venv_dir/bin/ytxt" --install-share-hook
 fi
