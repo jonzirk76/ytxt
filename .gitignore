@@ -1,0 +1,22 @@
+# Python and build outputs
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local device state, credentials, and downloaded transcripts
+.agents/
+.codex/
+.aws/
+.env
+.env.*
+/Downloads/
+/transcripts/
+*.backup.*
+.DS_Store
