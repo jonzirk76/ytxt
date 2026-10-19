@@ -280,6 +280,20 @@ It does not install browser add-ons or enable scripts for you. After an update
 that changes the helper, replace the script's contents in Tampermonkey with
 the updated installed file. `YTXT_HOME` changes the parent application folder.
 
+If you are already signed in, a missing-control error does not mean you need
+to sign in again. Helper versions before 0.4.1 used the same sign-in advice
+for both a missing message box and a missing file input. Update ytxt with
+`sh install.sh`, replace the script in Tampermonkey, save, reload ChatGPT,
+and rerun your command. Updating the Python package alone does not update
+the script saved inside Tampermonkey.
+
+The helper recognizes several message-box layouts and attempts to open the
+attachment menu when the file input is absent. If its notice asks you to open
+the + / attachment menu, do so while the command is waiting. It waits up to
+30 seconds for the message box and another 45 seconds for a document input,
+then reports which control it could not find. If that still fails even
+though manual uploads work, the helper needs another compatibility update.
+
 ### Handoff behavior and limitations
 
 ytxt starts a short-lived server bound to `127.0.0.1` on a random port. A random

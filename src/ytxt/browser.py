@@ -132,7 +132,7 @@ def open_browser_draft(draft: Draft, connect_timeout: float = 30,
                 "Use --no-chatgpt for download-only operation."
             )
         if not server.finished.wait(prepare_timeout):
-            raise OSError("The browser draft timed out. Check the browser and sign in, then retry")
+            raise OSError("The browser draft timed out. Check the ytxt notice in the ChatGPT tab, then retry")
         if server.result["state"] != "prepared":
             raise OSError("Browser draft needs attention: " + server.result.get("message", "Unknown browser error"))
         print("Browser draft prefilled and files passed to the upload control. Check attachments before sending.")

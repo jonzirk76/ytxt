@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ytxt ChatGPT draft helper
 // @namespace    ytxt
-// @version      0.4.0
+// @version      0.4.1
 // @description  Prefill ytxt drafts and select transcript files. Never submits a message.
 // @match        https://chatgpt.com/*
 // @grant        GM_xmlhttpRequest
@@ -61,15 +61,49 @@
         banner.textContent = "ytxt: " + message;
     };
 
-    const waitFor = async find => {
-        const deadline = Date.now() + 150000;
+    const waitFor = async (find, timeout, message) => {
+        const deadline = Date.now() + timeout;
         while (Date.now() < deadline) {
             const found = find();
             if (found) return found;
             await new Promise(resolve => setTimeout(resolve, 250));
         }
-        throw new Error("ChatGPT's composer or file input was unavailable. Sign in, then retry.");
+        throw new Error(typeof message === "function" ? message() : message);
     };
+
+    const visible = element => !element.disabled && !element.readOnly
+        && element.getAttribute("aria-disabled") !== "true"
+        && element.getClientRects().length > 0;
+    const findEditor = () => {
+        // ChatGPT has used both a textarea and a rich-text editor, sometimes
+        // inside the element carrying the old prompt-textarea ID.
+        for (const selector of [
+            'textarea#prompt-textarea',
+            '#prompt-textarea[contenteditable]:not([contenteditable="false"])',
+            '#prompt-textarea [contenteditable]:not([contenteditable="false"])',
+            'form .ProseMirror[contenteditable="true"]',
+            'form [role="textbox"][contenteditable]:not([contenteditable="false"])',
+            'textarea[placeholder*="Message" i], textarea[placeholder*="Ask" i]',
+        ]) {
+            const editor = Array.from(document.querySelectorAll(selector)).find(visible);
+            if (editor) return editor;
+        }
+        return null;
+    };
+    const findFileInput = () => Array.from(document.querySelectorAll('input[type="file"]'))
+        .find(element => {
+            const types = (element.getAttribute("accept") || "").toLowerCase()
+                .split(",").map(type => type.trim()).filter(Boolean);
+            return !element.disabled && (!types.length || types.some(type =>
+                ["*", "*/*", ".txt", "text/plain", "text/*"].includes(type)));
+        });
+    const attachmentMenu = () => Array.from(document.querySelectorAll(
+        'button[data-testid="composer-plus-btn"], button#composer-plus-btn, button[aria-haspopup="menu"]'
+    )).find(button => visible(button) && (
+        button.getAttribute("data-testid") === "composer-plus-btn"
+        || button.id === "composer-plus-btn"
+        || /^(add|attach|upload)\b.*\b(files?|photos?)\b/i.test(button.getAttribute("aria-label") || "")
+    ));
 
     try {
         notice("Loading transcript draft…");
@@ -77,21 +111,35 @@
         if (typeof draft.prompt !== "string" || !Array.isArray(draft.files) || !draft.files.length) {
             throw new Error("Invalid draft");
         }
-        const editor = await waitFor(() => document.querySelector(
-            '#prompt-textarea[contenteditable="true"], textarea#prompt-textarea'
-        ));
+        const editor = await waitFor(findEditor, 30000,
+            "Could not find ChatGPT's editable message box. Open an empty chat and retry. "
+            + "If the message box is visible, the ytxt browser helper needs updating; this is not a sign-in check.");
         const currentText = () => editor.tagName === "TEXTAREA" ? editor.value : editor.textContent;
         if (currentText().trim()) {
             throw new Error("An existing ChatGPT draft is present. Clear it or save it, then rerun ytxt.");
         }
 
-        // Select a general document input, avoiding image-only controls.
-        const input = await waitFor(() => Array.from(document.querySelectorAll('input[type="file"]'))
-            .find(element => {
-                const accept = (element.getAttribute("accept") || "").toLowerCase();
-                return !element.disabled && (!accept || accept === "*"
-                    || accept.includes(".txt") || accept.includes("text/"));
-            }));
+        // Some layouts mount the document input only when the + menu opens.
+        // Open only the menu toggle: never click Upload, a file picker, or Send.
+        let openedMenu = false;
+        let waitingNotice = false;
+        const input = await waitFor(() => {
+            const input = findFileInput();
+            if (input) return input;
+            if (!waitingNotice) {
+                notice("Waiting for the attachment control. Open the + / attachment menu if needed; leave the message box empty.");
+                waitingNotice = true;
+            }
+            const menu = attachmentMenu();
+            if (menu && !openedMenu) {
+                openedMenu = true;
+                if (menu.getAttribute("aria-expanded") !== "true") menu.click();
+            }
+            return null;
+        }, 45000, () => "Found the message box, but no file input accepting .txt transcripts. "
+            + "Open ChatGPT's + / attachment menu while retrying. If uploads work manually, "
+            + "the browser helper needs updating. File inputs found: "
+            + document.querySelectorAll('input[type="file"]').length + ".");
         if (input.files && input.files.length) {
             throw new Error("The composer already contains files. Start an empty chat and rerun ytxt.");
         }
